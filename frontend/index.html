@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Go Faker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Faker en Go</h1>
+    <div id="data"></div>
+    <button onclick="loadFake()">Générer</button>
+
+    <script>
+        function loadFake() {
+            fetch('/api/fake')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('data').innerHTML = `
+                        <p><strong>Nom :</strong> ${data.name}</p>
+                        <p><strong>Email :</strong> ${data.email}</p>
+                        <p><strong>Téléphone :</strong> ${data.phone}</p>
+                        <p><strong>Adresse :</strong> ${data.address}</p>
+                    `;
+                });
+        }
+
+        loadFake();
+    </script>
+</body>
+</html>

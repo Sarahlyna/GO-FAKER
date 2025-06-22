@@ -20,8 +20,7 @@ func FakeName() string {
 }
 
 func FakeEmail() string {
-    name := firstNames[rand.Intn(len(firstNames))] + "." + lastNames[rand.Intn(len(lastNames))]
-    return name + "@" + domains[rand.Intn(len(domains))]
+    return FakeName() + "@" + domains[rand.Intn(len(domains))]
 }
 
 func FakePhone() string {
@@ -29,7 +28,5 @@ func FakePhone() string {
 }
 
 func FakeAddress() string {
-    number := rand.Intn(200) + 1
-    street := streets[rand.Intn(len(streets))]
-    return strconv.Itoa(number) + " " + street
+    return strconv.Itoa(rand.Intn(200)+1) + " " + streets[rand.Intn(len(streets))]
 }
