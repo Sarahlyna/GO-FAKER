@@ -1,37 +1,61 @@
 package main
 
-import (
-	"encoding/json"
-	"net/http"
-	"go-faker/backend/faker"
-)
+var firstNames = [4]string{"Alice", "Bob", "Charlie", "Diane"}
+var lastNames = [4]string{"Martin", "Dupont", "Lemoine", "Bernard"}
+var domains = [3]string{"example.com", "mail.com", "test.org"}
+var streets = [3]string{"rue de Paris", "avenue de Lyon", "boulevard Haussmann"}
 
-type FakeData struct {
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Phone   string `json:"phone"`
-	Address string `json:"address"`
+var currentIndex = 0
+
+func fakeName() string {
+	first := firstNames[currentIndex%len(firstNames)]
+	last := lastNames[currentIndex%len(lastNames)]
+	return first + " " + last
 }
 
-func apiHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Access-Control-Allow-Origin", "*") 
-    w.Header().Set("Content-Type", "application/json")
+func fakeEmail(name string) string {
+	domain := domains[currentIndex%len(domains)]
+	email := name + "@" + domain
+	return email
+}
 
-    data := FakeData{
-        Name:    faker.FakeName(),
-        Email:   faker.FakeEmail(),
-        Phone:   faker.FakePhone(),
-        Address: faker.FakeAddress(),
-    }
+func fakePhone() string {
+	num := "06"
+	for i := 0; i < 8; i++ {
+		chiffre := ((currentIndex + i) % 9) + 1
+		num += string(rune('0' + chiffre))
+	}
+	return num
+}
 
-    json.NewEncoder(w).Encode(data)
+func fakeAddress() string {
+	numero := 1 + (currentIndex % 100)
+	street := streets[currentIndex%len(streets)]
+	return itoa(numero) + " " + street
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var digits = [10]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
+	var buf [10]byte
+	i := 10
+	for n > 0 {
+		i--
+		buf[i] = digits[n%10]
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 func main() {
-	http.HandleFunc("/api/fake", apiHandler)
+	println("=== Faux utilisateur ===")
+	name := fakeName()
+	println("Nom: " + name)
+	println("Email: " + fakeEmail(name))
+	println("Téléphone: " + fakePhone())
+	println("Adresse: " + fakeAddress())
 
-	fs := http.FileServer(http.Dir("frontend"))
-	http.Handle("/", fs)
-
-	http.ListenAndServe(":8080", nil)
+	currentIndex++
 }
