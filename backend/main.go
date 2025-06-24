@@ -1,11 +1,25 @@
 package main
 
-var firstNames = [4]string{"Alice", "Bob", "Charlie", "Diane"}
-var lastNames = [4]string{"Martin", "Dupont", "Lemoine", "Bernard"}
-var domains = [3]string{"example.com", "mail.com", "test.org"}
-var streets = [3]string{"rue de Paris", "avenue de Lyon", "boulevard Haussmann"}
+import (
+	"encoding/json"
+	"go-faker/backend/faker"
+	"net/http"
+	"strconv"
+)
+
+type FakeUser struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Phone   string `json:"phone"`
+	Address string `json:"address"`
+}
 
 var currentIndex = 0
+
+var firstNames = []string{"Alice", "Bob", "Charlie", "Diane"}
+var lastNames = []string{"Martin", "Dupont", "Lemoine", "Bernard"}
+var domains = []string{"example.com", "mail.com", "test.org"}
+var streets = []string{"rue de Paris", "avenue de Lyon", "boulevard Haussmann"}
 
 func fakeName() string {
 	first := firstNames[currentIndex%len(firstNames)]
@@ -15,8 +29,7 @@ func fakeName() string {
 
 func fakeEmail(name string) string {
 	domain := domains[currentIndex%len(domains)]
-	email := name + "@" + domain
-	return email
+	return name + "@" + domain
 }
 
 func fakePhone() string {
@@ -31,31 +44,40 @@ func fakePhone() string {
 func fakeAddress() string {
 	numero := 1 + (currentIndex % 100)
 	street := streets[currentIndex%len(streets)]
-	return itoa(numero) + " " + street
+	return strconv.Itoa(numero) + " " + street
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+func handler(w http.ResponseWriter, r *http.Request) {
+	mode := r.URL.Query().Get("mode")
+
+	var user FakeUser
+
+	if mode == "random" {
+		user = FakeUser{
+			Name:    faker.FakeName(),
+			Email:   faker.FakeEmail(),
+			Phone:   faker.FakePhone(),
+			Address: faker.FakeAddress(),
+		}
+	} else {
+		name := fakeName()
+		user = FakeUser{
+			Name:    name,
+			Email:   fakeEmail(name),
+			Phone:   fakePhone(),
+			Address: fakeAddress(),
+		}
+		currentIndex++
 	}
-	var digits = [10]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
-	var buf [10]byte
-	i := 10
-	for n > 0 {
-		i--
-		buf[i] = digits[n%10]
-		n /= 10
-	}
-	return string(buf[i:])
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
 }
 
 func main() {
-	println("=== Faux utilisateur ===")
-	name := fakeName()
-	println("Nom: " + name)
-	println("Email: " + fakeEmail(name))
-	println("Téléphone: " + fakePhone())
-	println("Adresse: " + fakeAddress())
-
-	currentIndex++
+	fs := http.FileServer(http.Dir("./frontend"))
+	http.Handle("/", fs)
+	http.HandleFunc("/api/fake", handler)
+	println("Serveur Go Faker sur http://localhost:9090")
+	http.ListenAndServe(":8080", nil)
 }
