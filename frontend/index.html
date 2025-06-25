@@ -209,7 +209,42 @@
         }
         function downloadJSON() {
             if (!lastData.length) return;
-            const blob = new Blob([JSON.stringify(lastData, null, 2)], {type: 'application/json'});
+            // Get columns in schema order
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(lastData[0]);
+            }
+            // Flatten data in schema order
+            const flatten = (obj, prefix = '', res = {}) => {
+                for (const k in obj) {
+                    const val = obj[k];
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
+                        flatten(val, prefix + k + '.', res);
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
+                        res[prefix + k] = val;
+                    }
+                }
+                return res;
+            };
+            const flatData = lastData.map(row => flatten(row));
+            // Build array of objects with keys in schema order
+            const orderedData = flatData.map(row => {
+                const obj = {};
+                columns.forEach(col => { obj[col] = row[col]; });
+                return obj;
+            });
+            const blob = new Blob([JSON.stringify(orderedData, null, 2)], {type: 'application/json'});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -219,19 +254,35 @@
         }
         function downloadCSV() {
             if (!lastData.length) return;
+            // Get columns in schema order
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(lastData[0]);
+            }
+            // Flatten data in schema order
             const flatten = (obj, prefix = '', res = {}) => {
                 for (const k in obj) {
                     const val = obj[k];
-                    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
                         flatten(val, prefix + k + '.', res);
-                    } else {
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
                         res[prefix + k] = val;
                     }
                 }
                 return res;
             };
             const flatData = lastData.map(row => flatten(row));
-            const columns = Object.keys(flatData[0]);
             let csv = columns.join(',') + '\n';
             for (const row of flatData) {
                 csv += columns.map(c => JSON.stringify(row[c] ?? '')).join(',') + '\n';
