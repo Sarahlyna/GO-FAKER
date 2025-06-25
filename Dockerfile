@@ -1,13 +1,21 @@
-FROM golang:1.22-alpine as builder
+FROM golang:1.24-alpine
+
+# Install git (needed for go get) and Air
+RUN apk add --no-cache git curl
+RUN go install github.com/air-verse/air@latest
 
 WORKDIR /app
+COPY .air.toml ./
+# Copy go.mod first for better caching
 COPY go.mod ./
-COPY backend/ ./backend/
-RUN go build -o server ./backend/main.go
+# (If you have go.sum, add: COPY go.sum ./)
+RUN go mod download
 
-FROM alpine
-WORKDIR /app
-COPY --from=builder /app/server .
-COPY frontend ./frontend/
+# Copy the rest of the code
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
+
 EXPOSE 8080
-CMD ["./server"]
+
+# Use Air for live reload (default config)
+CMD ["air"]

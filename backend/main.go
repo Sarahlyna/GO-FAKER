@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"go-faker/backend/faker"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 )
@@ -14,70 +15,119 @@ type FakeUser struct {
 	Address string `json:"address"`
 }
 
-var currentIndex = 0
-
-var firstNames = []string{"Alice", "Bob", "Charlie", "Diane"}
-var lastNames = []string{"Martin", "Dupont", "Lemoine", "Bernard"}
-var domains = []string{"example.com", "mail.com", "test.org"}
-var streets = []string{"rue de Paris", "avenue de Lyon", "boulevard Haussmann"}
-
-func fakeName() string {
-	first := firstNames[currentIndex%len(firstNames)]
-	last := lastNames[currentIndex%len(lastNames)]
-	return first + " " + last
-}
-
-func fakeEmail(name string) string {
-	domain := domains[currentIndex%len(domains)]
-	return name + "@" + domain
-}
-
-func fakePhone() string {
-	num := "06"
-	for i := 0; i < 8; i++ {
-		chiffre := ((currentIndex + i) % 9) + 1
-		num += string(rune('0' + chiffre))
-	}
-	return num
-}
-
-func fakeAddress() string {
-	numero := 1 + (currentIndex % 100)
-	street := streets[currentIndex%len(streets)]
-	return strconv.Itoa(numero) + " " + street
-}
-
 func handler(w http.ResponseWriter, r *http.Request) {
-	mode := r.URL.Query().Get("mode")
+	// Get locale from query, default to 'fr'
+	locale := r.URL.Query().Get("locale")
+	if locale == "" {
+		locale = "fr"
+	}
 
-	var user FakeUser
+	// Get custom rules for phone (prefix, length)
+	phoneRules := make(map[string]interface{})
+	if prefix := r.URL.Query().Get("phone_prefix"); prefix != "" {
+		phoneRules["prefix"] = prefix
+	}
+	if lengthStr := r.URL.Query().Get("phone_length"); lengthStr != "" {
+		if length, err := strconv.Atoi(lengthStr); err == nil {
+			phoneRules["length"] = length
+		}
+	}
 
-	if mode == "random" {
-		user = FakeUser{
-			Name:    faker.FakeName(),
-			Email:   faker.FakeEmail(),
-			Phone:   faker.FakePhone(),
-			Address: faker.FakeAddress(),
-		}
-	} else {
-		name := fakeName()
-		user = FakeUser{
-			Name:    name,
-			Email:   fakeEmail(name),
-			Phone:   fakePhone(),
-			Address: fakeAddress(),
-		}
-		currentIndex++
+	name := faker.Fakers["name"].Fake(locale, nil)
+	user := FakeUser{
+		Name:    name,
+		Email:   faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": name }),
+		Phone:   faker.Fakers["phone"].Fake(locale, phoneRules),
+		Address: faker.Fakers["address"].Fake(locale, nil),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
 
+// Recursively generate fake data from a schema definition, with context for field dependencies
+func generateFromSchema(schema map[string]interface{}, locale string) map[string]interface{} {
+	result := make(map[string]interface{})
+	context := make(map[string]interface{})
+	// First pass: generate 'name' if present
+	for key, val := range schema {
+		if key == "name" {
+			if v, ok := val.(string); ok && v == "name" {
+				name := faker.Fakers["name"].Fake(locale, nil)
+				result[key] = name
+				context["name"] = name
+			}
+		}
+	}
+	// Second pass: generate other fields
+	for key, val := range schema {
+		if key == "name" {
+			continue // already handled
+		}
+		switch v := val.(type) {
+		case string:
+			if v == "email" && context["name"] != nil {
+				// Use the generated name for email
+				result[key] = faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": context["name"].(string) })
+			} else if fakerFn, ok := faker.Fakers[v]; ok {
+				result[key] = fakerFn.Fake(locale, nil)
+			} else {
+				result[key] = v // literal value
+			}
+		case map[string]interface{}:
+			result[key] = generateFromSchema(v, locale)
+		default:
+			result[key] = v
+		}
+	}
+	return result
+}
+
+func schemaHandler(w http.ResponseWriter, r *http.Request) {
+	type SchemaRequest struct {
+		Schema map[string]interface{} `json:"schema"`
+		Count  int                    `json:"count"`
+		Locale string                 `json:"locale"`
+	}
+	var req SchemaRequest
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Count <= 0 {
+		req.Count = 1
+	}
+	if req.Locale == "" {
+		req.Locale = "fr"
+	}
+	results := make([]map[string]interface{}, req.Count)
+	for i := 0; i < req.Count; i++ {
+		results[i] = generateFromSchema(req.Schema, req.Locale)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func fakersListHandler(w http.ResponseWriter, r *http.Request) {
+	fakers := make([]string, 0, len(faker.Fakers))
+	for k := range faker.Fakers {
+		fakers = append(fakers, k)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(fakers)
+}
+
 func main() {
 	fs := http.FileServer(http.Dir("./frontend"))
 	http.Handle("/", fs)
 	http.HandleFunc("/api/fake", handler)
+	http.HandleFunc("/api/fake/schema", schemaHandler)
+	http.HandleFunc("/api/fakers", fakersListHandler)
 	println("Serveur Go Faker sur http://localhost:9090")
 	http.ListenAndServe(":8080", nil)
 }
