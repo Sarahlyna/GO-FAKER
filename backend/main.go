@@ -47,14 +47,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Recursively generate fake data from a schema definition, with context for field dependencies
-func generateFromSchema(schema map[string]interface{}, locale string) map[string]interface{} {
+func generateFromSchema(schema map[string]interface{}, locale string, context map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
-	context := make(map[string]interface{})
 	// First pass: generate 'name' if present
 	for key, val := range schema {
 		if key == "name" {
 			if v, ok := val.(string); ok && v == "name" {
 				name := faker.Fakers["name"].Fake(locale, nil)
+				result[key] = name
+				context["name"] = name
+			} else if v, ok := val.(map[string]interface{}); ok && v["faker"] == "name" {
+				name := faker.Fakers["name"].Fake(locale, deepCopyMap(v))
 				result[key] = name
 				context["name"] = name
 			}
@@ -68,19 +71,16 @@ func generateFromSchema(schema map[string]interface{}, locale string) map[string
 		switch v := val.(type) {
 		case string:
 			if v == "email" && context["name"] != nil {
-				// Use the generated name for email
 				result[key] = faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": context["name"].(string) })
 			} else if v == "age" || regexp.MustCompile(`^age(:|$)`).MatchString(v) {
-				// Parse min/max from string like 'age:min=18,max=30'
 				rules := make(map[string]interface{})
 				if v != "age" {
-					// Extract min/max
-					re := regexp.MustCompile(`min=(\d+)`)
+					re := regexp.MustCompile(`min=(\\d+)`)
 					if m := re.FindStringSubmatch(v); len(m) == 2 {
 						minVal, _ := strconv.Atoi(m[1])
 						rules["min"] = minVal
 					}
-					re = regexp.MustCompile(`max=(\d+)`)
+					re = regexp.MustCompile(`max=(\\d+)`)
 					if m := re.FindStringSubmatch(v); len(m) == 2 {
 						maxVal, _ := strconv.Atoi(m[1])
 						rules["max"] = maxVal
@@ -93,12 +93,43 @@ func generateFromSchema(schema map[string]interface{}, locale string) map[string
 				result[key] = v // literal value
 			}
 		case map[string]interface{}:
-			result[key] = generateFromSchema(v, locale)
+			if f, ok := v["faker"]; ok {
+				fakerName, _ := f.(string)
+				opts := deepCopyMap(v)
+				// For email, if name is present in context, always pass it unless explicitly overridden
+				if fakerName == "email" && context["name"] != nil {
+					if _, hasName := opts["name"]; !hasName {
+						// Always deep copy before setting name
+						opts = deepCopyMap(opts)
+						opts["name"] = context["name"].(string)
+					}
+				}
+				if fakerFn, ok := faker.Fakers[fakerName]; ok {
+					result[key] = fakerFn.Fake(locale, opts)
+				} else {
+					result[key] = opts // fallback
+				}
+			} else {
+				result[key] = generateFromSchema(v, locale, context)
+			}
 		default:
 			result[key] = v
 		}
 	}
 	return result
+}
+
+// Helper to deep copy a map[string]interface{} (recursively)
+func deepCopyMap(m map[string]interface{}) map[string]interface{} {
+	newMap := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		if sub, ok := v.(map[string]interface{}); ok {
+			newMap[k] = deepCopyMap(sub)
+		} else {
+			newMap[k] = v
+		}
+	}
+	return newMap
 }
 
 func schemaHandler(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +156,7 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	results := make([]map[string]interface{}, req.Count)
 	for i := 0; i < req.Count; i++ {
-		results[i] = generateFromSchema(req.Schema, req.Locale)
+		results[i] = generateFromSchema(req.Schema, req.Locale, make(map[string]interface{}))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)

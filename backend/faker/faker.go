@@ -39,6 +39,11 @@ func init() {
 
 type NameFaker struct{}
 func (n NameFaker) Fake(locale string, rules map[string]interface{}) string {
+	if rules != nil {
+		if custom, ok := rules["name"].(string); ok && custom != "" {
+			return custom
+		}
+	}
 	firsts := localizedFirstNames[locale]
 	lasts := localizedLastNames[locale]
 	if firsts == nil { firsts = localizedFirstNames["en"] }
@@ -57,23 +62,59 @@ func (e EmailFaker) Fake(locale string, rules map[string]interface{}) string {
 	if name == "" {
 		name = NameFaker{}.Fake(locale, nil)
 	}
+	domain := ""
+	if rules != nil {
+		if d, ok := rules["domain"].(string); ok && d != "" {
+			domain = d
+		}
+	}
 	domains := localizedDomains[locale]
 	if domains == nil { domains = localizedDomains["en"] }
+	if domain == "" {
+		domain = domains[rand.Intn(len(domains))]
+	}
 	namePart := name
 	namePart = strings.ToLower(namePart)
 	namePart = strings.ReplaceAll(namePart, " ", ".")
-	return namePart + "@" + domains[rand.Intn(len(domains))]
+	return namePart + "@" + domain
 }
 
 // rules: prefix (string), length (int)
 type PhoneFaker struct{}
 func (p PhoneFaker) Fake(locale string, rules map[string]interface{}) string {
-	prefix := "06"
-	length := 8
-	if v, ok := rules["prefix"].(string); ok { prefix = v }
-	if v, ok := rules["length"].(int); ok { length = v }
-	num := prefix
-	for i := 0; i < length; i++ {
+	if locale == "fr" {
+		// French phone: 0X XX XX XX XX
+		prefix := "0"
+		if rules != nil {
+			if v, ok := rules["prefix"].(string); ok && v != "" {
+				prefix = v
+			}
+		}
+		if prefix == "0" {
+			prefix += strconv.Itoa(rand.Intn(7)+1) // 01 to 07
+		}
+		num := prefix
+		for i := 0; i < 8; i++ {
+			num += strconv.Itoa(rand.Intn(10))
+		}
+		return num[:2] + " " + num[2:4] + " " + num[4:6] + " " + num[6:8] + " " + num[8:10]
+	} else if locale == "en" {
+		// US phone: (XXX) XXX-XXXX
+		area := rand.Intn(800) + 200 // 200-999
+		if rules != nil {
+			if a, ok := rules["area"].(string); ok && a != "" {
+				if areaInt, err := strconv.Atoi(a); err == nil && areaInt >= 200 && areaInt <= 999 {
+					area = areaInt
+				}
+			}
+		}
+		central := rand.Intn(900) + 100 // 100-999
+		station := rand.Intn(10000) // 0000-9999
+		return fmt.Sprintf("(%03d) %03d-%04d", area, central, station)
+	}
+	// Default: just 10 random digits
+	num := ""
+	for i := 0; i < 10; i++ {
 		num += strconv.Itoa(rand.Intn(10))
 	}
 	return num
@@ -89,6 +130,11 @@ func (a AddressFaker) Fake(locale string, rules map[string]interface{}) string {
 
 type CityFaker struct{}
 func (c CityFaker) Fake(locale string, rules map[string]interface{}) string {
+	if rules != nil {
+		if city, ok := rules["city"].(string); ok && city != "" {
+			return city
+		}
+	}
 	cities := localizedCities[locale]
 	if cities == nil { cities = localizedCities["en"] }
 	return cities[rand.Intn(len(cities))]

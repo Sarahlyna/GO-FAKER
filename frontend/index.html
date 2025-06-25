@@ -35,12 +35,11 @@
         let lastData = [];
         let availableFakers = [];
         let builderFields = [
-            { name: 'name', faker: 'name' },
-            { name: 'age', faker: 'age' },
-            { name: 'email', faker: 'email' },
-            { name: 'phone', faker: 'phone' },
-            { name: 'city', faker: 'city' },
-            { name: 'address', faker: 'address' }
+            { name: 'name', faker: 'name', options: {} },
+            { name: 'email', faker: 'email', options: {} },
+            { name: 'phone', faker: 'phone', options: {} },
+            { name: 'city', faker: 'city', options: {} },
+            { name: 'address', faker: 'address', options: {} }
         ];
         let showJsonEditor = false;
 
@@ -63,13 +62,27 @@
                         <select onchange="updateFieldFaker(${idx}, this.value)">
                             ${availableFakers.map(f => `<option value="${f}" ${f === field.faker ? 'selected' : ''}>${f}</option>`).join('')}
                         </select>
+                        ${renderOptions(field, idx)}
                         <button onclick="removeField(${idx})">Supprimer</button>
                     </div>
                 `;
             });
         }
+        function renderOptions(field, idx) {
+            let html = '';
+            if (field.faker === 'phone') {
+                html += `<input type="text" placeholder="Préfixe/Area" value="${field.options.prefix || ''}" onchange="updateFieldOption(${idx}, 'prefix', this.value)">`;
+            }
+            if (field.faker === 'email') {
+                html += `<input type="text" placeholder="Domaine" value="${field.options.domain || ''}" onchange="updateFieldOption(${idx}, 'domain', this.value)">`;
+            }
+            if (field.faker === 'city') {
+                html += `<input type="text" placeholder="Ville spécifique" value="${field.options.city || ''}" onchange="updateFieldOption(${idx}, 'city', this.value)">`;
+            }
+            return html;
+        }
         function addField() {
-            builderFields.push({ name: '', faker: availableFakers[0] || '' });
+            builderFields.push({ name: '', faker: availableFakers[0] || '', options: {} });
             renderBuilder();
             syncSchemaEditor();
         }
@@ -84,12 +97,24 @@
         }
         function updateFieldFaker(idx, value) {
             builderFields[idx].faker = value;
+            builderFields[idx].options = {};
+            renderBuilder();
+            syncSchemaEditor();
+        }
+        function updateFieldOption(idx, key, value) {
+            builderFields[idx].options[key] = value;
             syncSchemaEditor();
         }
         function buildSchemaObj() {
             const obj = {};
             builderFields.forEach(f => {
-                if (f.name && f.faker) obj[f.name] = f.faker;
+                if (f.name && f.faker) {
+                    if (Object.keys(f.options).length > 0) {
+                        obj[f.name] = { faker: f.faker, ...f.options };
+                    } else {
+                        obj[f.name] = f.faker;
+                    }
+                }
             });
             return obj;
         }
@@ -100,7 +125,16 @@
         function syncBuilderFromEditor() {
             try {
                 const schema = JSON.parse(document.getElementById('schema').value);
-                builderFields = Object.entries(schema).map(([name, faker]) => ({ name, faker }));
+                builderFields = Object.entries(schema).map(([name, val]) => {
+                    if (typeof val === 'string') {
+                        return { name, faker: val, options: {} };
+                    } else if (typeof val === 'object' && val.faker) {
+                        const { faker, ...options } = val;
+                        return { name, faker, options };
+                    } else {
+                        return { name, faker: '', options: {} };
+                    }
+                });
                 renderBuilder();
             } catch (e) {}
         }
@@ -141,19 +175,34 @@
             const flatten = (obj, prefix = '', res = {}) => {
                 for (const k in obj) {
                     const val = obj[k];
-                    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
                         flatten(val, prefix + k + '.', res);
-                    } else {
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
                         res[prefix + k] = val;
                     }
                 }
                 return res;
             };
             const flatData = data.map(row => flatten(row));
-            const columns = Object.keys(flatData[0]);
+            // Get columns in schema order
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(flatData[0]);
+            }
             let html = '<table><thead><tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
             for (const row of flatData) {
-                html += '<tr>' + columns.map(c => `<td>${row[c]}</td>`).join('') + '</tr>';
+                html += '<tr>' + columns.map(c => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>';
             }
             html += '</tbody></table>';
             document.getElementById('preview').innerHTML = html;
