@@ -94,10 +94,27 @@ func (c CityFaker) Fake(locale string, rules map[string]interface{}) string {
 	return cities[rand.Intn(len(cities))]
 }
 
+type AgeFaker struct{}
+func (a AgeFaker) Fake(locale string, rules map[string]interface{}) string {
+	min := 18
+	max := 99
+	if v, ok := rules["min"].(int); ok {
+		min = v
+	}
+	if v, ok := rules["max"].(int); ok {
+		max = v
+	}
+	if min > max {
+		min, max = max, min
+	}
+	return strconv.Itoa(rand.Intn(max-min+1) + min)
+}
+
 var Fakers = map[string]Faker{
 	"name":    NameFaker{},
 	"email":   EmailFaker{},
 	"phone":   PhoneFaker{},
 	"address": AddressFaker{},
 	"city":    CityFaker{},
+	"age":     AgeFaker{},
 }

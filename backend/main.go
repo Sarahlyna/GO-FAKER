@@ -5,6 +5,7 @@ import (
 	"go-faker/backend/faker"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"strconv"
 )
 
@@ -69,6 +70,23 @@ func generateFromSchema(schema map[string]interface{}, locale string) map[string
 			if v == "email" && context["name"] != nil {
 				// Use the generated name for email
 				result[key] = faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": context["name"].(string) })
+			} else if v == "age" || regexp.MustCompile(`^age(:|$)`).MatchString(v) {
+				// Parse min/max from string like 'age:min=18,max=30'
+				rules := make(map[string]interface{})
+				if v != "age" {
+					// Extract min/max
+					re := regexp.MustCompile(`min=(\d+)`)
+					if m := re.FindStringSubmatch(v); len(m) == 2 {
+						minVal, _ := strconv.Atoi(m[1])
+						rules["min"] = minVal
+					}
+					re = regexp.MustCompile(`max=(\d+)`)
+					if m := re.FindStringSubmatch(v); len(m) == 2 {
+						maxVal, _ := strconv.Atoi(m[1])
+						rules["max"] = maxVal
+					}
+				}
+				result[key] = faker.Fakers["age"].Fake(locale, rules)
 			} else if fakerFn, ok := faker.Fakers[v]; ok {
 				result[key] = fakerFn.Fake(locale, nil)
 			} else {
