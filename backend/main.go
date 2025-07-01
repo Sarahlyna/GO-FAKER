@@ -17,13 +17,11 @@ type FakeUser struct {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	// Get locale from query, default to 'fr'
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
 		locale = "fr"
 	}
 
-	// Get custom rules for phone (prefix, length)
 	phoneRules := make(map[string]interface{})
 	if prefix := r.URL.Query().Get("phone_prefix"); prefix != "" {
 		phoneRules["prefix"] = prefix
@@ -37,7 +35,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	name := faker.Fakers["name"].Fake(locale, nil)
 	user := FakeUser{
 		Name:    name,
-		Email:   faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": name }),
+		Email:   faker.Fakers["email"].Fake(locale, map[string]interface{}{"name": name}),
 		Phone:   faker.Fakers["phone"].Fake(locale, phoneRules),
 		Address: faker.Fakers["address"].Fake(locale, nil),
 	}
@@ -46,10 +44,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// Recursively generate fake data from a schema definition, with context for field dependencies
 func generateFromSchema(schema map[string]interface{}, locale string, context map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
-	// First pass: generate 'name' if present
 	for key, val := range schema {
 		if key == "name" {
 			if v, ok := val.(string); ok && v == "name" {
@@ -62,25 +58,36 @@ func generateFromSchema(schema map[string]interface{}, locale string, context ma
 				context["name"] = name
 			}
 		}
+		if key == "city" {
+			if v, ok := val.(string); ok && v == "city" {
+				city := faker.Fakers["city"].Fake(locale, nil)
+				result[key] = city
+				context["city"] = city
+			} else if v, ok := val.(map[string]interface{}); ok && v["faker"] == "city" {
+				city := faker.Fakers["city"].Fake(locale, deepCopyMap(v))
+				result[key] = city
+				context["city"] = city
+			}
+		}
 	}
-	// Second pass: generate other fields
+
 	for key, val := range schema {
-		if key == "name" {
-			continue // already handled
+		if key == "name" || key == "city" {
+			continue
 		}
 		switch v := val.(type) {
 		case string:
 			if v == "email" && context["name"] != nil {
-				result[key] = faker.Fakers["email"].Fake(locale, map[string]interface{}{ "name": context["name"].(string) })
+				result[key] = faker.Fakers["email"].Fake(locale, map[string]interface{}{"name": context["name"].(string)})
 			} else if v == "age" || regexp.MustCompile(`^age(:|$)`).MatchString(v) {
 				rules := make(map[string]interface{})
 				if v != "age" {
-					re := regexp.MustCompile(`min=(\\d+)`)
+					re := regexp.MustCompile(`min=(\d+)`)
 					if m := re.FindStringSubmatch(v); len(m) == 2 {
 						minVal, _ := strconv.Atoi(m[1])
 						rules["min"] = minVal
 					}
-					re = regexp.MustCompile(`max=(\\d+)`)
+					re = regexp.MustCompile(`max=(\d+)`)
 					if m := re.FindStringSubmatch(v); len(m) == 2 {
 						maxVal, _ := strconv.Atoi(m[1])
 						rules["max"] = maxVal
@@ -90,24 +97,28 @@ func generateFromSchema(schema map[string]interface{}, locale string, context ma
 			} else if fakerFn, ok := faker.Fakers[v]; ok {
 				result[key] = fakerFn.Fake(locale, nil)
 			} else {
-				result[key] = v // literal value
+				result[key] = v
 			}
 		case map[string]interface{}:
 			if f, ok := v["faker"]; ok {
 				fakerName, _ := f.(string)
 				opts := deepCopyMap(v)
-				// For email, if name is present in context, always pass it unless explicitly overridden
+
 				if fakerName == "email" && context["name"] != nil {
 					if _, hasName := opts["name"]; !hasName {
-						// Always deep copy before setting name
-						opts = deepCopyMap(opts)
 						opts["name"] = context["name"].(string)
 					}
 				}
+				if fakerName == "postalcode" && context["city"] != nil {
+					if _, hasCity := opts["city"]; !hasCity {
+						opts["city"] = context["city"].(string)
+					}
+				}
+
 				if fakerFn, ok := faker.Fakers[fakerName]; ok {
 					result[key] = fakerFn.Fake(locale, opts)
 				} else {
-					result[key] = opts // fallback
+					result[key] = opts
 				}
 			} else {
 				result[key] = generateFromSchema(v, locale, context)
@@ -119,7 +130,6 @@ func generateFromSchema(schema map[string]interface{}, locale string, context ma
 	return result
 }
 
-// Helper to deep copy a map[string]interface{} (recursively)
 func deepCopyMap(m map[string]interface{}) map[string]interface{} {
 	newMap := make(map[string]interface{}, len(m))
 	for k, v := range m {
@@ -163,12 +173,12 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func fakersListHandler(w http.ResponseWriter, r *http.Request) {
-	fakers := make([]string, 0, len(faker.Fakers))
+	fakersList := make([]string, 0, len(faker.Fakers))
 	for k := range faker.Fakers {
-		fakers = append(fakers, k)
+		fakersList = append(fakersList, k)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(fakers)
+	json.NewEncoder(w).Encode(fakersList)
 }
 
 func main() {

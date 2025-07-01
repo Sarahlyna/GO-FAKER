@@ -16,7 +16,7 @@ func TestNameFaker(t *testing.T) {
 
 func TestEmailFaker(t *testing.T) {
 	name := "Alice Smith"
-	email := EmailFaker{}.Fake("en", map[string]interface{}{ "name": name })
+	email := EmailFaker{}.Fake("en", map[string]interface{}{"name": name})
 	if !strings.HasPrefix(email, "alice.smith@") {
 		t.Errorf("Expected email to start with alice.smith@, got: %s", email)
 	}
@@ -26,12 +26,16 @@ func TestEmailFaker(t *testing.T) {
 }
 
 func TestPhoneFaker(t *testing.T) {
-	phone := PhoneFaker{}.Fake("fr", map[string]interface{}{ "prefix": "07", "length": 9 })
+	phone := PhoneFaker{}.Fake("fr", map[string]interface{}{"prefix": "07"})
 	if !strings.HasPrefix(phone, "07") {
 		t.Errorf("Expected phone to start with 07, got: %s", phone)
 	}
-	if len(phone) != 11 {
-		t.Errorf("Expected phone length 11, got: %d (%s)", len(phone), phone)
+	expectedLen := len("07 00 00 00 00")
+	if len(phone) != expectedLen {
+		t.Errorf("Expected phone length %d, got: %d (%s)", expectedLen, len(phone), phone)
+	}
+	if !regexp.MustCompile(`^07( \d{2}){4}$`).MatchString(phone) {
+		t.Errorf("Expected phone to match French format, got: %s", phone)
 	}
 }
 
@@ -63,7 +67,7 @@ func TestAgeFakerDefault(t *testing.T) {
 func TestAgeFakerMinMax(t *testing.T) {
 	min, max := 25, 30
 	for i := 0; i < 20; i++ {
-		ageStr := AgeFaker{}.Fake("en", map[string]interface{}{ "min": min, "max": max })
+		ageStr := AgeFaker{}.Fake("en", map[string]interface{}{"min": min, "max": max})
 		age, err := strconv.Atoi(ageStr)
 		if err != nil {
 			t.Fatalf("Age is not a number: %s", ageStr)
@@ -72,4 +76,15 @@ func TestAgeFakerMinMax(t *testing.T) {
 			t.Errorf("Age out of range: %d (expected %d-%d)", age, min, max)
 		}
 	}
-} 
+}
+
+func TestPostalCodeFaker(t *testing.T) {
+	city := "Paris"
+	code := PostalCodeFaker{}.Fake("fr", map[string]interface{}{"city": city})
+	if !strings.HasPrefix(code, "75") {
+		t.Errorf("Expected postal code for Paris to start with 75, got: %s", code)
+	}
+	if len(code) != 5 {
+		t.Errorf("Expected postal code length 5, got: %d (%s)", len(code), code)
+	}
+}

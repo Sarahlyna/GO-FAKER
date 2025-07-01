@@ -79,46 +79,47 @@ func (e EmailFaker) Fake(locale string, rules map[string]interface{}) string {
 	return namePart + "@" + domain
 }
 
-// rules: prefix (string), length (int)
 type PhoneFaker struct{}
+
 func (p PhoneFaker) Fake(locale string, rules map[string]interface{}) string {
-	if locale == "fr" {
-		// French phone: 0X XX XX XX XX
-		prefix := "0"
+	switch locale {
+	case "fr":
+		// France : 06 ou 07
+		prefix := "06"
 		if rules != nil {
 			if v, ok := rules["prefix"].(string); ok && v != "" {
 				prefix = v
 			}
-		}
-		if prefix == "0" {
-			prefix += strconv.Itoa(rand.Intn(7)+1) // 01 to 07
 		}
 		num := prefix
 		for i := 0; i < 8; i++ {
 			num += strconv.Itoa(rand.Intn(10))
 		}
 		return num[:2] + " " + num[2:4] + " " + num[4:6] + " " + num[6:8] + " " + num[8:10]
-	} else if locale == "en" {
-		// US phone: (XXX) XXX-XXXX
-		area := rand.Intn(800) + 200 // 200-999
+
+	case "en":
+		// US : +1 (XXX) XXX-XXXX
+		area := rand.Intn(800) + 200
 		if rules != nil {
 			if a, ok := rules["area"].(string); ok && a != "" {
-				if areaInt, err := strconv.Atoi(a); err == nil && areaInt >= 200 && areaInt <= 999 {
+				if areaInt, err := strconv.Atoi(a); err == nil {
 					area = areaInt
 				}
 			}
 		}
-		central := rand.Intn(900) + 100 // 100-999
-		station := rand.Intn(10000) // 0000-9999
-		return fmt.Sprintf("(%03d) %03d-%04d", area, central, station)
+		central := rand.Intn(900) + 100
+		station := rand.Intn(10000)
+		return fmt.Sprintf("+1 (%03d) %03d-%04d", area, central, station)
+
+	default:
+		num := "+"
+		for i := 0; i < 10; i++ {
+			num += strconv.Itoa(rand.Intn(10))
+		}
+		return num
 	}
-	// Default: just 10 random digits
-	num := ""
-	for i := 0; i < 10; i++ {
-		num += strconv.Itoa(rand.Intn(10))
-	}
-	return num
 }
+
 
 
 type AddressFaker struct{}
@@ -163,4 +164,60 @@ var Fakers = map[string]Faker{
 	"address": AddressFaker{},
 	"city":    CityFaker{},
 	"age":     AgeFaker{},
+	"postalcode": PostalCodeFaker{},
+}
+
+type PostalCodeFaker struct{}
+var cityToPostalPrefix = map[string]string{
+	// France
+	"Paris":       "75",
+	"Marseille":   "13",
+	"Lyon":        "69",
+	"Toulouse":    "31",
+	"Nice":        "06",
+	"Nantes":      "44",
+	// US
+	"New York":    "100",
+	"Los Angeles": "900",
+	"Chicago":     "606",
+	"Houston":     "770",
+	"Phoenix":     "850",
+}
+
+func (p PostalCodeFaker) Fake(locale string, rules map[string]interface{}) string {
+	city := ""
+	if rules != nil {
+		if c, ok := rules["city"].(string); ok {
+			city = c
+		}
+	}
+
+	prefix := ""
+	if city != "" {
+		if pre, ok := cityToPostalPrefix[city]; ok {
+			prefix = pre
+		}
+	}
+
+	if prefix == "" {
+		if locale == "fr" {
+			prefix = strconv.Itoa(rand.Intn(95) + 1)
+			if len(prefix) == 1 {
+				prefix = "0" + prefix
+			}
+		} else if locale == "en" {
+			prefix = strconv.Itoa(rand.Intn(899) + 100)
+		} else {
+			prefix = "00"
+		}
+	}
+
+	suffix := ""
+	if locale == "fr" {
+		suffix = fmt.Sprintf("%03d", rand.Intn(1000))
+	} else if locale == "en" {
+		suffix = fmt.Sprintf("%02d", rand.Intn(100))
+	}
+
+	return prefix + suffix
 }
