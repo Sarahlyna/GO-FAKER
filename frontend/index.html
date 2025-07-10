@@ -7,24 +7,286 @@
 </head>
 <body>
     <h1>Faker en Go</h1>
-    <div id="data"></div>
-    <button onclick="loadFake()">Générer</button>
+    <div class="controls">
+        <label for="locale">Langue :</label>
+        <select id="locale">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+        </select>
+        <label for="count">Nb lignes :</label>
+        <input type="number" id="count" min="1" max="1000" value="5">
+        <button onclick="generateSchemaFake()">Générer (schéma)</button>
+        <button onclick="downloadJSON()">Télécharger JSON</button>
+        <button onclick="downloadCSV()">Télécharger CSV</button>
+    </div>
+    <div class="schema-builder card">
+        <h3>Construire un schéma</h3>
+        <form id="builderForm" onsubmit="return false;"></form>
+        <button onclick="addField()">Ajouter un champ</button>
+        <button onclick="toggleJsonEditor()" style="float:right;">Afficher/masquer l'éditeur JSON</button>
+    </div>
+    <div class="schema-editor" id="schemaEditor" style="display:none;">
+        <label for="schema">Schéma (JSON) :</label><br>
+        <textarea id="schema" rows="10" cols="60"></textarea>
+    </div>
+    <div id="preview" class="card"></div>
 
     <script>
-        function loadFake() {
-            fetch('/api/fake')
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('data').innerHTML = `
-                        <p><strong>Nom :</strong> ${data.name}</p>
-                        <p><strong>Email :</strong> ${data.email}</p>
-                        <p><strong>Téléphone :</strong> ${data.phone}</p>
-                        <p><strong>Adresse :</strong> ${data.address}</p>
-                    `;
-                });
-        }
+        let lastData = [];
+        let availableFakers = [];
+        let builderFields = [
+            { name: 'name', faker: 'name', options: {} },
+            { name: 'email', faker: 'email', options: {} },
+            { name: 'phone', faker: 'phone', options: {} },
+            { name: 'city', faker: 'city', options: {} },
+            { name: 'address', faker: 'address', options: {} }
+        ];
+        let showJsonEditor = false;
 
-        loadFake();
+        fetch('/api/fakers')
+            .then(res => res.json())
+            .then(fakers => {
+                availableFakers = fakers;
+                renderBuilder();
+                syncSchemaEditor();
+            });
+
+        function renderBuilder() {
+            const form = document.getElementById('builderForm');
+            form.innerHTML = '';
+            builderFields.forEach((field, idx) => {
+                form.innerHTML += `
+                    <div class="builder-row">
+                        <input type="text" value="${field.name}" onchange="updateFieldName(${idx}, this.value)">
+                        <select onchange="updateFieldFaker(${idx}, this.value)">
+                            ${availableFakers.map(f => `<option value="${f}" ${f === field.faker ? 'selected' : ''}>${f}</option>`).join('')}
+                        </select>
+                        ${renderOptions(field, idx)}
+                        <button onclick="removeField(${idx})">Supprimer</button>
+                    </div>
+                `;
+            });
+        }
+        function renderOptions(field, idx) {
+            let html = '';
+            if (field.faker === 'phone') {
+                html += `<input type="text" placeholder="Préfixe/Area" value="${field.options.prefix || ''}" onchange="updateFieldOption(${idx}, 'prefix', this.value)">`;
+            }
+            if (field.faker === 'email') {
+                html += `<input type="text" placeholder="Domaine" value="${field.options.domain || ''}" onchange="updateFieldOption(${idx}, 'domain', this.value)">`;
+            }
+            if (field.faker === 'city') {
+                html += `<input type="text" placeholder="Ville spécifique" value="${field.options.city || ''}" onchange="updateFieldOption(${idx}, 'city', this.value)">`;
+            }
+            return html;
+        }
+        function addField() {
+            builderFields.push({ name: '', faker: availableFakers[0] || '', options: {} });
+            renderBuilder();
+            syncSchemaEditor();
+        }
+        function removeField(idx) {
+            builderFields.splice(idx, 1);
+            renderBuilder();
+            syncSchemaEditor();
+        }
+        function updateFieldName(idx, value) {
+            builderFields[idx].name = value;
+            syncSchemaEditor();
+        }
+        function updateFieldFaker(idx, value) {
+            builderFields[idx].faker = value;
+            builderFields[idx].options = {};
+            renderBuilder();
+            syncSchemaEditor();
+        }
+        function updateFieldOption(idx, key, value) {
+            builderFields[idx].options[key] = value;
+            syncSchemaEditor();
+        }
+        function buildSchemaObj() {
+            const obj = {};
+            builderFields.forEach(f => {
+                if (f.name && f.faker) {
+                    if (Object.keys(f.options).length > 0) {
+                        obj[f.name] = { faker: f.faker, ...f.options };
+                    } else {
+                        obj[f.name] = f.faker;
+                    }
+                }
+            });
+            return obj;
+        }
+        function syncSchemaEditor() {
+            const schema = buildSchemaObj();
+            document.getElementById('schema').value = JSON.stringify(schema, null, 2);
+        }
+        function syncBuilderFromEditor() {
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                builderFields = Object.entries(schema).map(([name, val]) => {
+                    if (typeof val === 'string') {
+                        return { name, faker: val, options: {} };
+                    } else if (typeof val === 'object' && val.faker) {
+                        const { faker, ...options } = val;
+                        return { name, faker, options };
+                    } else {
+                        return { name, faker: '', options: {} };
+                    }
+                });
+                renderBuilder();
+            } catch (e) {}
+        }
+        function toggleJsonEditor() {
+            showJsonEditor = !showJsonEditor;
+            document.getElementById('schemaEditor').style.display = showJsonEditor ? '' : 'none';
+            if (showJsonEditor) syncSchemaEditor();
+        }
+        document.getElementById('schema').addEventListener('input', syncBuilderFromEditor);
+
+        function generateSchemaFake() {
+            const locale = document.getElementById('locale').value;
+            const count = parseInt(document.getElementById('count').value) || 1;
+            let schema;
+            try {
+                schema = JSON.parse(document.getElementById('schema').value);
+            } catch (e) {
+                alert('Schéma JSON invalide');
+                return;
+            }
+            fetch('/api/fake/schema', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ schema, count, locale })
+            })
+            .then(res => res.json())
+            .then(data => {
+                lastData = data;
+                renderPreview(data);
+            });
+        }
+        function renderPreview(data) {
+            if (!Array.isArray(data) || data.length === 0) {
+                document.getElementById('preview').innerHTML = '<em>Aucune donnée générée</em>';
+                return;
+            }
+            const flatten = (obj, prefix = '', res = {}) => {
+                for (const k in obj) {
+                    const val = obj[k];
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
+                        flatten(val, prefix + k + '.', res);
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
+                        res[prefix + k] = val;
+                    }
+                }
+                return res;
+            };
+            const flatData = data.map(row => flatten(row));
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(flatData[0]);
+            }
+            let html = '<table><thead><tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+            for (const row of flatData) {
+                html += '<tr>' + columns.map(c => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('preview').innerHTML = html;
+        }
+        function downloadJSON() {
+            if (!lastData.length) return;
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(lastData[0]);
+            }
+            const flatten = (obj, prefix = '', res = {}) => {
+                for (const k in obj) {
+                    const val = obj[k];
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
+                        flatten(val, prefix + k + '.', res);
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
+                        res[prefix + k] = val;
+                    }
+                }
+                return res;
+            };
+            const flatData = lastData.map(row => flatten(row));
+            const orderedData = flatData.map(row => {
+                const obj = {};
+                columns.forEach(col => { obj[col] = row[col]; });
+                return obj;
+            });
+            const blob = new Blob([JSON.stringify(orderedData, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'fake-data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        function downloadCSV() {
+            if (!lastData.length) return;
+            let columns = [];
+            try {
+                const schema = JSON.parse(document.getElementById('schema').value);
+                for (const key in schema) {
+                    if (typeof schema[key] === 'object' && schema[key] !== null && !Array.isArray(schema[key]) && schema[key].faker === undefined) {
+                        for (const subkey in schema[key]) {
+                            columns.push(key + '.' + subkey);
+                        }
+                    } else {
+                        columns.push(key);
+                    }
+                }
+            } catch (e) {
+                columns = Object.keys(lastData[0]);
+            }
+            const flatten = (obj, prefix = '', res = {}) => {
+                for (const k in obj) {
+                    const val = obj[k];
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val) && val.faker === undefined) {
+                        flatten(val, prefix + k + '.', res);
+                    } else if (typeof val !== 'object' || val === null || Array.isArray(val) || val.faker === undefined) {
+                        res[prefix + k] = val;
+                    }
+                }
+                return res;
+            };
+            const flatData = lastData.map(row => flatten(row));
+            let csv = columns.join(',') + '\n';
+            for (const row of flatData) {
+                csv += columns.map(c => JSON.stringify(row[c] ?? '')).join(',') + '\n';
+            }
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'fake-data.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
     </script>
 </body>
 </html>

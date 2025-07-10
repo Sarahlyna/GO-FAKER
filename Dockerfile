@@ -1,13 +1,16 @@
-FROM golang:1.22-alpine as builder
+FROM golang:1.24-alpine
+
+RUN apk add --no-cache git curl
+RUN go install github.com/air-verse/air@latest
 
 WORKDIR /app
+COPY .air.toml ./
 COPY go.mod ./
-COPY backend/ ./backend/
-RUN go build -o server ./backend/main.go
+RUN go mod download
 
-FROM alpine
-WORKDIR /app
-COPY --from=builder /app/server .
-COPY frontend ./frontend/
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
+
 EXPOSE 8080
-CMD ["./server"]
+
+CMD ["air"]
