@@ -98,7 +98,6 @@ func (p PhoneFaker) Fake(locale string, rules map[string]interface{}) string {
 		return num[:2] + " " + num[2:4] + " " + num[4:6] + " " + num[6:8] + " " + num[8:10]
 
 	case "en":
-		// US : +1 (XXX) XXX-XXXX
 		area := rand.Intn(800) + 200
 		if rules != nil {
 			if a, ok := rules["area"].(string); ok && a != "" {
@@ -119,8 +118,6 @@ func (p PhoneFaker) Fake(locale string, rules map[string]interface{}) string {
 		return num
 	}
 }
-
-
 
 type AddressFaker struct{}
 func (a AddressFaker) Fake(locale string, rules map[string]interface{}) string {
